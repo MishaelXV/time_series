@@ -7,7 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error
 from sklearn.base import clone
-
+from sklearn.feature_selection import mutual_info_regression
 
 def get_feature_importance(model, feature_names):
 
@@ -141,3 +141,23 @@ def average_kuncheva(selected_sets, total_features):
             scores.append(score)
 
     return np.nanmean(scores)
+
+
+def select_by_mutual_information(X, y, top_n=15):
+
+    scores = mutual_info_regression(
+        X,
+        y,
+        random_state=42
+    )
+
+    result = pd.DataFrame({
+        "Feature": X.columns,
+        "Score": scores
+    })
+
+    result = result.sort_values("Score", ascending=False).reset_index(drop=True)
+
+    selected_features = result.head(top_n)["Feature"].tolist()
+
+    return selected_features, result
