@@ -4,7 +4,7 @@ import pandas as pd
 
 def load_data(
     file_name: str,
-    sheet_name: str = " Data"
+    sheet_name: str = "Data"
 ):
 
     project_path = os.getcwd()
