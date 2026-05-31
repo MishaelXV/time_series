@@ -125,7 +125,7 @@ def create_features(df, rub_usd=None, key_rate=None, target_col="Balance"):
     data["IsQuarterStart"] = data["Date"].dt.is_quarter_start.astype(int)
     data["IsQuarterEnd"] = data["Date"].dt.is_quarter_end.astype(int)
 
-    data["MonthProgress"] = data["DayOfMonth"] / 31
+    data["MonthProgress"] = data["DayOfMonth"] / data["Date"].dt.days_in_month
 
     data["DayOfWeek_Sin"] = np.sin(2 * np.pi * data["DayOfWeek"] / 5)
     data["DayOfWeek_Cos"] = np.cos(2 * np.pi * data["DayOfWeek"] / 5)
