@@ -16,8 +16,7 @@ def replace_outliers_interpolate(series):
     lower = q1 - 1.5 * iqr
     upper = q3 + 1.5 * iqr
 
-    
-    outlier_mask = ((series_clean < lower) | (series_clean > upper))
+    outlier_mask = (series_clean < lower) | (series_clean > upper)
     
     outliers_count = outlier_mask.sum()
     outliers_percent = 100 * outliers_count / len(series_clean)

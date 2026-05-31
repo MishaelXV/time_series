@@ -50,6 +50,7 @@ def replace_outliers_interpolate(series):
     series_clean.loc[outlier_mask] = np.nan
 
     series_clean = series_clean.interpolate(method="linear")
+    series_clean = series_clean.ffill().bfill()
 
     return series_clean, outliers_count, outliers_percent
 
