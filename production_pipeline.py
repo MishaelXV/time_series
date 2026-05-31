@@ -27,6 +27,33 @@ def prepare_series(df, date_col="Date", target_col="Balance"):
     return series
 
 
+def replace_outliers_interpolate(series):
+
+    series_clean = series.copy()
+
+    q1 = series_clean.quantile(0.25)
+    q3 = series_clean.quantile(0.75)
+
+    iqr = q3 - q1
+
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+
+    outlier_mask = (
+        (series_clean < lower) |
+        (series_clean > upper)
+    )
+
+    outliers_count = int(outlier_mask.sum())
+    outliers_percent = 100 * outliers_count / len(series_clean)
+
+    series_clean.loc[outlier_mask] = np.nan
+
+    series_clean = series_clean.interpolate(method="linear")
+
+    return series_clean, outliers_count, outliers_percent
+
+
 def get_next_business_day(date):
 
     return date + BDay(1)
@@ -59,15 +86,12 @@ def forecast_next_day(model):
 
 
 # =========================================================
-# Сохранение и загрузка модели
+# Сохранение и загрузка
 # =========================================================
 
 def save_pickle(obj, path):
 
-    os.makedirs(
-        os.path.dirname(path),
-        exist_ok=True
-    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
     with open(path, "wb") as file:
         pickle.dump(obj, file)
@@ -92,12 +116,7 @@ def file_exists(path):
 
 def count_business_days(start_date, end_date):
 
-    return len(
-        pd.bdate_range(
-            start=start_date,
-            end=end_date
-        )
-    ) - 1
+    return len(pd.bdate_range(start=start_date, end=end_date)) - 1
 
 
 def should_retrain_by_period(last_train_date, current_date, retrain_period=5):
@@ -114,7 +133,7 @@ def should_retrain_by_period(last_train_date, current_date, retrain_period=5):
 # CUSUM
 # =========================================================
 
-def calculate_cusum(series, mean, std, threshold=5, drift=0.5):
+def calculate_cusum(series, mean, std, threshold=10, drift=0.5):
 
     values = np.asarray(series)
 
@@ -201,7 +220,8 @@ def run_production_pipeline(
     retrain_period=5,
     date_col="Date",
     target_col="Balance",
-    use_drift_control=True
+    use_drift_control=False,
+    use_outlier_processing=True
 ):
 
     series = prepare_series(
@@ -213,6 +233,15 @@ def run_production_pipeline(
     current_date = series.index.max()
     next_forecast_date = get_next_business_day(current_date)
 
+    if use_outlier_processing:
+
+        series, outliers_count, outliers_percent = replace_outliers_interpolate(series)
+
+    else:
+
+        outliers_count = 0
+        outliers_percent = 0
+
     metadata_exists = file_exists(metadata_path)
     model_exists = file_exists(model_path)
 
@@ -220,7 +249,6 @@ def run_production_pipeline(
 
     retrain_reasons = []
 
-    # Первое обучение
     if not model_exists or metadata is None:
 
         need_retrain = True
@@ -243,7 +271,6 @@ def run_production_pipeline(
 
         need_retrain = period_trigger
 
-    # Контроль разладки
     drift_info = None
 
     if use_drift_control:
@@ -252,7 +279,7 @@ def run_production_pipeline(
             series=series,
             reference_window=60,
             monitoring_window=20,
-            threshold=5,
+            threshold=10,
             drift=0.5
         )
 
@@ -261,7 +288,6 @@ def run_production_pipeline(
             need_retrain = True
             retrain_reasons.append("Обнаружена разладка временного ряда")
 
-    # Переобучение или загрузка модели
     if need_retrain:
 
         model = fit_sarima(
@@ -275,18 +301,14 @@ def run_production_pipeline(
             "order": order,
             "seasonal_order": seasonal_order,
             "retrain_period": retrain_period,
-            "train_size": len(series)
+            "train_size": len(series),
+            "outlier_processing": use_outlier_processing,
+            "outliers_count": outliers_count,
+            "outliers_percent": outliers_percent
         }
 
-        save_pickle(
-            obj=model,
-            path=model_path
-        )
-
-        save_pickle(
-            obj=metadata,
-            path=metadata_path
-        )
+        save_pickle(obj=model, path=model_path)
+        save_pickle(obj=metadata, path=metadata_path)
 
         retrained = True
 
@@ -305,7 +327,9 @@ def run_production_pipeline(
         "Retrained": [retrained],
         "RetrainReason": ["; ".join(retrain_reasons) if retrain_reasons else "Переобучение не требуется"],
         "TrainEndDate": [current_date],
-        "TrainSize": [len(series)]
+        "TrainSize": [len(series)],
+        "OutliersProcessed": [outliers_count],
+        "OutliersPercent": [outliers_percent]
     })
 
     return result, model, metadata, drift_info
