@@ -193,7 +193,7 @@ def run_catboost(X_train, y_train, X_test, y_test, params=None):
     y_pred = model.predict(X_test)
 
     metrics = evaluate_model(y_test, y_pred)
-
+    
     result = pd.DataFrame({
 
         "Actual": y_test.values,
