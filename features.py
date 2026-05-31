@@ -1,11 +1,117 @@
 import pandas as pd
 
 
-def create_features(df, target_col="Balance"):
+def prepare_usd_rate(rub_usd):
+
+    usd = rub_usd.copy()
+
+    usd = usd.rename(columns={
+        "data": "Date",
+        "curs": "USD_RUB"
+    })
+
+    usd["Date"] = pd.to_datetime(usd["Date"])
+
+    usd = usd[["Date", "USD_RUB"]]
+
+    usd = usd.sort_values("Date").reset_index(drop=True)
+
+    return usd
+
+
+def prepare_key_rate(key_rate):
+
+    rate = key_rate.copy()
+
+    rate = rate.rename(columns={
+        "Дата": "Date",
+        "Ставка": "KeyRate",
+        "Key rate": "KeyRate"
+    })
+
+    rate["Date"] = pd.to_datetime(rate["Date"], dayfirst=True)
+
+    rate = rate[["Date", "KeyRate"]]
+
+    rate["KeyRate"] = (
+        rate["KeyRate"]
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .astype(float)
+    )
+
+    rate = rate.sort_values("Date").reset_index(drop=True)
+
+    return rate
+
+
+def add_macro_features(df, rub_usd=None, key_rate=None):
+
+    data = df.copy()
+
+    if rub_usd is not None:
+
+        usd = prepare_usd_rate(rub_usd)
+
+        data = data.merge(
+            usd,
+            on="Date",
+            how="left"
+        )
+
+        data["USD_RUB"] = data["USD_RUB"].ffill()
+
+        data["USD_RUB_Lag_1"] = data["USD_RUB"].shift(1)
+        data["USD_RUB_Lag_5"] = data["USD_RUB"].shift(5)
+        data["USD_RUB_Lag_10"] = data["USD_RUB"].shift(10)
+
+        data["USD_RUB_Change_1"] = data["USD_RUB"].shift(1).diff(1)
+        data["USD_RUB_Change_5"] = data["USD_RUB"].shift(1).diff(5)
+
+        data["USD_RUB_RollingMean_5"] = data["USD_RUB"].shift(1).rolling(5).mean()
+        data["USD_RUB_RollingStd_5"] = data["USD_RUB"].shift(1).rolling(5).std()
+        data["USD_RUB_RollingMean_20"] = data["USD_RUB"].shift(1).rolling(20).mean()
+        data["USD_RUB_RollingStd_20"] = data["USD_RUB"].shift(1).rolling(20).std()
+
+        data = data.drop(columns=["USD_RUB"])
+
+    if key_rate is not None:
+
+        rate = prepare_key_rate(key_rate)
+
+        data = data.merge(
+            rate,
+            on="Date",
+            how="left"
+        )
+
+        data["KeyRate"] = data["KeyRate"].ffill()
+
+        data["KeyRate_Lag_1"] = data["KeyRate"].shift(1)
+        data["KeyRate_Lag_5"] = data["KeyRate"].shift(5)
+        data["KeyRate_Lag_20"] = data["KeyRate"].shift(20)
+
+        data["KeyRate_Change_1"] = data["KeyRate"].shift(1).diff(1)
+        data["KeyRate_Change_5"] = data["KeyRate"].shift(1).diff(5)
+        data["KeyRate_Change_20"] = data["KeyRate"].shift(1).diff(20)
+
+        data = data.drop(columns=["KeyRate"])
+
+    return data
+
+
+def create_features(df, rub_usd=None, key_rate=None, target_col="Balance"):
 
     data = df.copy()
 
     data = data.sort_values("Date").reset_index(drop=True)
+
+    # Макроэкономические признаки
+    data = add_macro_features(
+        df=data,
+        rub_usd=rub_usd,
+        key_rate=key_rate
+    )
 
     # Календарные признаки
     data["DayOfWeek"] = data["Date"].dt.dayofweek
